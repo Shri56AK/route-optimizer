@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Delivery Route Optimizer</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+  body { font-family: system-ui, sans-serif; margin: 0; display: flex; height: 100vh; }
+  #sidebar { width: 340px; padding: 16px; overflow-y: auto; box-sizing: border-box; border-right: 1px solid #ddd; }
+  #map { flex: 1; }
+  textarea { width: 100%; height: 160px; font-family: monospace; font-size: 12px; box-sizing: border-box; }
+  button { width: 100%; padding: 10px; margin-top: 8px; background: #222; color: white; border: none; cursor: pointer; }
+  button:hover { background: #444; }
+  #result { margin-top: 16px; font-size: 13px; }
+  .leg { padding: 4px 0; border-bottom: 1px solid #eee; }
+  h1 { font-size: 18px; }
+  .total { font-weight: bold; margin-top: 10px; }
+</style>
+</head>
+<body>
+
+<div id="sidebar">
+  <h1>Delivery Route Optimizer</h1>
+  <p style="font-size: 13px; color: #555;">Edit the stops below (JSON), then click Optimize.</p>
+  <textarea id="stopsInput">[
+  {"name": "Warehouse", "lat": 12.9716, "lon": 77.5946},
+  {"name": "Stop A", "lat": 12.9352, "lon": 77.6245},
+  {"name": "Stop B", "lat": 13.0067, "lon": 77.5667},
+  {"name": "Stop C", "lat": 12.9081, "lon": 77.6476},
+  {"name": "Stop D", "lat": 12.9784, "lon": 77.6408}
+]</textarea>
+  <button onclick="optimizeRoute()">Optimize Route</button>
+  <div id="result"></div>
+</div>
+
+<div id="map"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+  const map = L.map('map').setView([12.9716, 77.5946], 12);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; OpenStreetMap contributors'
+  }).addTo(map);
+
+  let markers = [];
+  let routeLine = null;
+
+  async function optimizeRoute() {
+    let stops;
+    try {
+      stops = JSON.parse(document.getElementById('stopsInput').value);
+    } catch (e) {
+      alert('Invalid JSON in stops input');
+      return;
+    }
+
+    const response = await fetch('/optimize-route', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ stops })
+    });
+    const data = await response.json();
+
+    if (!response.ok) {
+      alert(data.error || 'Something went wrong');
+      return;
+    }
+
+    // Clear previous markers/route
+    markers.forEach(m => map.removeLayer(m));
+    markers = [];
+    if (routeLine) map.removeLayer(routeLine);
+
+    const latlngs = data.ordered_stops.map(s => [s.lat, s.lon]);
+
+    data.ordered_stops.forEach((stop, i) => {
+      const marker = L.marker([stop.lat, stop.lon])
+        .addTo(map)
+        .bindPopup(`${i + 1}. ${stop.name}`);
+      markers.push(marker);
+    });
+
+    routeLine = L.polyline(latlngs, { color: 'blue', weight: 4 }).addTo(map);
+    map.fitBounds(routeLine.getBounds(), { padding: [40, 40] });
+
+    let html = '<h3>Optimized Route</h3>';
+    data.legs.forEach(leg => {
+      html += `<div class="leg">${leg.from} &rarr; ${leg.to}: ${leg.distance_km} km</div>`;
+    });
+    html += `<div class="total">Total: ${data.total_distance_km} km</div>`;
+    document.getElementById('result').innerHTML = html;
+  }
+</script>
+
+</body>
+</html>
