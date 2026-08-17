@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dispatch — Route Optimizer</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #12161D;
+    --panel: #1A2029;
+    --panel-raised: #212938;
+    --line: #2B3341;
+    --text: #E7EAEF;
+    --text-dim: #8892A3;
+    --text-faint: #5B6472;
+    --amber: #FFB020;
+    --amber-dim: #7A5A1E;
+    --route: #4C8DFF;
+    --danger: #FF5C5C;
+    --radius: 6px;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    height: 100vh;
+    display: flex;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'IBM Plex Sans', sans-serif;
+    overflow: hidden;
+  }
+
+  /* ---------- Sidebar ---------- */
+
+  #sidebar {
+    width: 380px;
+    min-width: 380px;
+    display: flex;
+    flex-direction: column;
+    border-right: 1px solid var(--line);
+    background: var(--panel);
+  }
+
+  #header {
+    padding: 20px 20px 16px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .eyebrow {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--amber);
+    margin: 0 0 6px;
+  }
+
+  h1 {
+    font-family: 'Oswald', sans-serif;
+    font-weight: 600;
+    font-size: 22px;
+    letter-spacing: 0.01em;
+    margin: 0 0 6px;
+    text-transform: uppercase;
+  }
+
+  .subhead {
+    font-size: 13px;
+    color: var(--text-dim);
+    margin: 0;
+    line-height: 1.5;
+  }
+
+  /* ---------- Mode toggle ---------- */
+
+  #mode-row {
+    display: flex;
+    gap: 8px;
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .mode-btn {
+    flex: 1;
+    background: var(--panel-raised);
+    border: 1px solid var(--line);
+    color: var(--text-dim);
+    padding: 9px 10px;
+    border-radius: var(--radius);
+    font-family: 'IBM Plex Sans', sans-serif;
+    font-size: 12.5px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: border-color 0.15s, color 0.15s;
+  }
+
+  .mode-btn.active {
+    border-color: var(--amber);
+    color: var(--amber);
+  }
+
+  .mode-btn:hover:not(.active) {
+    color: var(--text);
+  }
+
+  .mode-hint {
+    padding: 0 20px 14px;
+    font-size: 12px;
+    color: var(--text-faint);
+    border-bottom: 1px solid var(--line);
+  }
+
+  /* ---------- Manual add form ---------- */
+
+  #manual-form {
+    display: none;
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--line);
+    gap: 8px;
+    flex-direction: column;
+  }
+
+  #manual-form.visible { display: flex; }
+
+  #manual-form .row { display: flex; gap: 8px; }
+
+  input[type="text"], input[type="number"] {
+    background: var(--panel-raised);
+    border: 1px solid var(--line);
+    color: var(--text);
+    padding: 8px 10px;
+    border-radius: var(--radius);
+    font-family: 'IBM Plex Sans', sans-serif;
+    font-size: 13px;
+    width: 100%;
+  }
+
+  input::placeholder { color: var(--text-faint); }
+
+  input:focus {
+    outline: 2px solid var(--amber);
+    outline-offset: 1px;
+    border-color: var(--amber);
+  }
+
+  #add-manual-btn {
+    background: transparent;
+    border: 1px dashed var(--text-faint);
+    color: var(--text-dim);
+    padding: 8px;
+    border-radius: var(--radius);
+    font-size: 12.5px;
+    cursor: pointer;
+  }
+
+  #add-manual-btn:hover { border-color: var(--amber); color: var(--amber); }
+
+  /* ---------- Stop list ---------- */
+
+  #stops-section {
+    flex: 1;
+    overflow-y: auto;
+    padding: 14px 20px;
+  }
+
+  .section-label {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+    margin: 0 0 10px;
+    display: flex;
+    justify-content: space-between;
+  }
+
+  #stop-list { list-style: none; margin: 0; padding: 0; }
+
+  .stop-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .stop-badge {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: var(--panel-raised);
+    border: 1px solid var(--line);
+    color: var(--text-dim);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .stop-row:first-child .stop-badge {
+    background: var(--amber-dim);
+    border-color: var(--amber);
+    color: var(--amber);
+  }
+
+  .stop-info { flex: 1; min-width: 0; }
+
+  .stop-name {
+    font-size: 13.5px;
+    font-weight: 500;
+    background: transparent;
+    border: none;
+    color: var(--text);
+    width: 100%;
+    padding: 2px 0;
+    font-family: 'IBM Plex Sans', sans-serif;
+  }
+
+  .stop-name:focus { outline: none; border-bottom: 1px solid var(--amber); }
+
+  .stop-coords {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10.5px;
+    color: var(--text-faint);
+  }
+
+  .stop-remove {
+    background: none;
+    border: none;
+    color: var(--text-faint);
+    cursor: pointer;
+    font-size: 16px;
+    line-height: 1;
+    padding: 4px;
+    flex-shrink: 0;
+  }
+
+  .stop-remove:hover { color: var(--danger); }
+
+  #empty-state {
+    text-align: center;
+    padding: 30px 10px;
+    color: var(--text-faint);
+    font-size: 13px;
+    line-height: 1.6;
+  }
+
+  #empty-state .big { font-size: 28px; display: block; margin-bottom: 10px; }
+
+  /* ---------- Footer / action ---------- */
+
+  #footer {
+    padding: 16px 20px 20px;
+    border-top: 1px solid var(--line);
+  }
+
+  #optimize-btn {
+    width: 100%;
+    background: var(--amber);
+    color: #1A1206;
+    border: none;
+    padding: 13px;
+    border-radius: var(--radius);
+    font-family: 'IBM Plex Sans', sans-serif;
+    font-weight: 600;
+    font-size: 14px;
+    cursor: pointer;
+    transition: opacity 0.15s;
+  }
+
+  #optimize-btn:disabled {
+    background: var(--panel-raised);
+    color: var(--text-faint);
+    cursor: not-allowed;
+  }
+
+  #optimize-btn:not(:disabled):hover { opacity: 0.9; }
+
+  #clear-btn {
+    width: 100%;
+    background: transparent;
+    border: none;
+    color: var(--text-faint);
+    padding: 8px;
+    font-size: 12px;
+    cursor: pointer;
+    margin-top: 4px;
+  }
+
+  #clear-btn:hover { color: var(--danger); }
+
+  /* ---------- Results manifest ---------- */
+
+  #results {
+    display: none;
+    padding: 16px 20px;
+    border-top: 1px solid var(--line);
+    background: var(--panel-raised);
+  }
+
+  #results.visible { display: block; }
+
+  .manifest-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 10px;
+  }
+
+  .manifest-title {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+  }
+
+  .manifest-total {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 18px;
+    font-weight: 500;
+    color: var(--amber);
+  }
+
+  .manifest-total .unit { font-size: 11px; color: var(--text-dim); }
+
+  .leg-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 12.5px;
+    padding: 6px 0;
+    border-bottom: 1px dotted var(--line);
+    color: var(--text-dim);
+  }
+
+  .leg-row .leg-dist {
+    font-family: 'IBM Plex Mono', monospace;
+    color: var(--text);
+  }
+
+  /* ---------- Map ---------- */
+
+  #map-wrap { flex: 1; position: relative; }
+  #map { width: 100%; height: 100%; background: var(--bg); }
+
+  #map-hint {
+    position: absolute;
+    top: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--panel);
+    border: 1px solid var(--line);
+    color: var(--text-dim);
+    font-size: 12.5px;
+    padding: 8px 16px;
+    border-radius: var(--radius);
+    z-index: 1000;
+    pointer-events: none;
+    transition: opacity 0.2s;
+  }
+
+  #status {
+    position: absolute;
+    bottom: 16px;
+    left: 16px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    color: var(--danger);
+    font-size: 12.5px;
+    padding: 8px 14px;
+    border-radius: var(--radius);
+    z-index: 1000;
+    display: none;
+  }
+
+  #status.visible { display: block; }
+
+  .leaflet-popup-content-wrapper {
+    background: var(--panel);
+    color: var(--text);
+    border-radius: var(--radius);
+  }
+  .leaflet-popup-tip { background: var(--panel); }
+  .leaflet-popup-content { font-family: 'IBM Plex Sans', sans-serif; font-size: 12.5px; }
+
+  ::-webkit-scrollbar { width: 8px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--line); border-radius: 4px; }
+</style>
+</head>
+<body>
+
+<div id="sidebar">
+  <div id="header">
+    <p class="eyebrow">Route Optimizer</p>
+    <h1>Dispatch</h1>
+    <p class="subhead">Click the map to drop stops, then optimize for the shortest run.</p>
+  </div>
+
+  <div id="mode-row">
+    <button class="mode-btn active" id="tab-map" onclick="setMode('map')">Click map</button>
+    <button class="mode-btn" id="tab-manual" onclick="setMode('manual')">Enter coordinates</button>
+  </div>
+  <div class="mode-hint" id="mode-hint">Click anywhere on the map to add a delivery stop.</div>
+
+  <div id="manual-form">
+    <div class="row">
+      <input type="text" id="in-name" placeholder="Stop name">
+    </div>
+    <div class="row">
+      <input type="number" id="in-lat" placeholder="Latitude" step="0.0001">
+      <input type="number" id="in-lon" placeholder="Longitude" step="0.0001">
+    </div>
+    <button id="add-manual-btn" onclick="addManualStop()">+ Add stop</button>
+  </div>
+
+  <div id="stops-section">
+    <p class="section-label"><span>Stops</span><span id="stop-count">0</span></p>
+    <ul id="stop-list"></ul>
+    <div id="empty-state">
+      <span class="big">📍</span>
+      No stops yet.<br>Add at least two to plan a route.
+    </div>
+  </div>
+
+  <div id="results">
+    <div class="manifest-header">
+      <span class="manifest-title">Optimized route</span>
+      <span class="manifest-total" id="total-distance">— <span class="unit">km</span></span>
+    </div>
+    <div id="leg-list"></div>
+  </div>
+
+  <div id="footer">
+    <button id="optimize-btn" disabled onclick="optimizeRoute()">Add 2+ stops to optimize</button>
+    <button id="clear-btn" onclick="clearAll()">Clear all stops</button>
+  </div>
+</div>
+
+<div id="map-wrap">
+  <div id="map"></div>
+  <div id="map-hint">Click the map to add a stop</div>
+  <div id="status"></div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+  const map = L.map('map', { zoomControl: true }).setView([12.9716, 77.5946], 12);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; OpenStreetMap contributors'
+  }).addTo(map);
+
+  let stops = [];       // {id, name, lat, lon}
+  let nextId = 1;
+  let markers = {};     // id -> Leaflet marker
+  let routeLine = null;
+  let mode = 'map';
+
+  function setMode(newMode) {
+    mode = newMode;
+    document.getElementById('tab-map').classList.toggle('active', mode === 'map');
+    document.getElementById('tab-manual').classList.toggle('active', mode === 'manual');
+    document.getElementById('manual-form').classList.toggle('visible', mode === 'manual');
+    document.getElementById('mode-hint').textContent = mode === 'map'
+      ? 'Click anywhere on the map to add a delivery stop.'
+      : 'Type exact coordinates for precise stop placement.';
+    document.getElementById('map-hint').style.opacity = mode === 'map' ? '1' : '0';
+  }
+
+  map.on('click', (e) => {
+    if (mode !== 'map') return;
+    addStop(`Stop ${stops.length + 1}`, e.latlng.lat, e.latlng.lng);
+  });
+
+  function addManualStop() {
+    const name = document.getElementById('in-name').value.trim() || `Stop ${stops.length + 1}`;
+    const lat = parseFloat(document.getElementById('in-lat').value);
+    const lon = parseFloat(document.getElementById('in-lon').value);
+    if (isNaN(lat) || isNaN(lon)) {
+      showStatus('Enter valid latitude and longitude.');
+      return;
+    }
+    addStop(name, lat, lon);
+    document.getElementById('in-name').value = '';
+    document.getElementById('in-lat').value = '';
+    document.getElementById('in-lon').value = '';
+    map.panTo([lat, lon]);
+  }
+
+  function addStop(name, lat, lon) {
+    const id = nextId++;
+    stops.push({ id, name, lat, lon });
+
+    const marker = L.marker([lat, lon]).addTo(map).bindPopup(name);
+    markers[id] = marker;
+
+    renderStopList();
+    clearResults();
+  }
+
+  function removeStop(id) {
+    stops = stops.filter(s => s.id !== id);
+    if (markers[id]) { map.removeLayer(markers[id]); delete markers[id]; }
+    renderStopList();
+    clearResults();
+  }
+
+  function renameStop(id, newName) {
+    const stop = stops.find(s => s.id === id);
+    if (stop) {
+      stop.name = newName || stop.name;
+      if (markers[id]) markers[id].bindPopup(stop.name);
+    }
+  }
+
+  function renderStopList() {
+    const list = document.getElementById('stop-list');
+    const empty = document.getElementById('empty-state');
+    const countLabel = document.getElementById('stop-count');
+    const optimizeBtn = document.getElementById('optimize-btn');
+
+    countLabel.textContent = stops.length;
+    list.innerHTML = '';
+
+    if (stops.length === 0) {
+      empty.style.display = 'block';
+    } else {
+      empty.style.display = 'none';
+      stops.forEach((stop, index) => {
+        const li = document.createElement('li');
+        li.className = 'stop-row';
+        li.innerHTML = `
+          <div class="stop-badge">${index === 0 ? 'S' : index + 1}</div>
+          <div class="stop-info">
+            <input class="stop-name" value="${escapeHtml(stop.name)}" data-id="${stop.id}">
+            <div class="stop-coords">${stop.lat.toFixed(4)}, ${stop.lon.toFixed(4)}</div>
+          </div>
+          <button class="stop-remove" data-id="${stop.id}" title="Remove stop">&times;</button>
+        `;
+        list.appendChild(li);
+      });
+
+      list.querySelectorAll('.stop-name').forEach(input => {
+        input.addEventListener('change', (e) => {
+          renameStop(parseInt(e.target.dataset.id), e.target.value.trim());
+        });
+      });
+      list.querySelectorAll('.stop-remove').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          removeStop(parseInt(e.target.dataset.id));
+        });
+      });
+    }
+
+    optimizeBtn.disabled = stops.length < 2;
+    optimizeBtn.textContent = stops.length < 2
+      ? 'Add 2+ stops to optimize'
+      : `Optimize route (${stops.length} stops)`;
+  }
+
+  function clearAll() {
+    stops.forEach(s => { if (markers[s.id]) map.removeLayer(markers[s.id]); });
+    stops = [];
+    markers = {};
+    renderStopList();
+    clearResults();
+  }
+
+  function clearResults() {
+    document.getElementById('results').classList.remove('visible');
+    if (routeLine) { map.removeLayer(routeLine); routeLine = null; }
+  }
+
+  function showStatus(message) {
+    const status = document.getElementById('status');
+    status.textContent = message;
+    status.classList.add('visible');
+    setTimeout(() => status.classList.remove('visible'), 3500);
+  }
+
+  function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  async function optimizeRoute() {
+    const btn = document.getElementById('optimize-btn');
+    const originalText = btn.textContent;
+    btn.textContent = 'Optimizing…';
+    btn.disabled = true;
+
+    try {
+      const response = await fetch('/optimize-route', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ stops: stops.map(({ name, lat, lon }) => ({ name, lat, lon })) })
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        showStatus(data.error || 'Something went wrong.');
+        return;
+      }
+
+      if (routeLine) map.removeLayer(routeLine);
+      const latlngs = data.ordered_stops.map(s => [s.lat, s.lon]);
+      routeLine = L.polyline(latlngs, { color: '#4C8DFF', weight: 4, opacity: 0.85 }).addTo(map);
+      map.fitBounds(routeLine.getBounds(), { padding: [50, 50] });
+
+      const legList = document.getElementById('leg-list');
+      legList.innerHTML = data.legs.map(leg => `
+        <div class="leg-row">
+          <span>${escapeHtml(leg.from)} → ${escapeHtml(leg.to)}</span>
+          <span class="leg-dist">${leg.distance_km} km</span>
+        </div>
+      `).join('');
+
+      document.getElementById('total-distance').innerHTML =
+        `${data.total_distance_km} <span class="unit">km</span>`;
+      document.getElementById('results').classList.add('visible');
+
+    } catch (err) {
+      showStatus('Could not reach the server. Is it running?');
+    } finally {
+      btn.disabled = stops.length < 2;
+      btn.textContent = originalText;
+    }
+  }
+
+  renderStopList();
+</script>
+
+</body>
+</html>
